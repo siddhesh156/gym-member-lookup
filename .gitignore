@@ -1,0 +1,20 @@
+# Root .gitignore
+
+# Ignore node_modules in both client and server
+client/node_modules/
+server/node_modules/
+
+# Ignore build/dist folders
+client/build/
+server/dist/
+
+# Ignore sensitive files
+client/.env
+server/.env
+
+# Logs
+*.log
+
+# OS and IDE files
+.DS_Store
+.vscode/
