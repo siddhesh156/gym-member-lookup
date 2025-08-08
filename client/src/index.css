@@ -160,6 +160,11 @@ h1 {
   background-color: #e53131;
 }
 
+.error-text {
+  color: #f44336;
+  margin: 10px 0;
+}
+
 /* Status indicators */
 .status-green {
   border: 2px solid #00e676;

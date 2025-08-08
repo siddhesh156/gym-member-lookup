@@ -91,6 +91,7 @@ export default function App() {
         <p><strong>Phone:</strong> {member['Phone Number']}</p>
         <p><strong>Membership Date:</strong> {format(startDate, 'dd MMM yyyy')}</p>
         <p><strong>Membership:</strong> {member['Status']}</p>
+        {member['Locker'] && <p><strong>Locker:</strong> {member['Locker']}</p>}
         <p><strong>Expiry:</strong> {format(expiryDate, 'dd MMM yyyy')}</p>
         {daysLeft <= 0 ? (
           <p className="expired">Membership Expired</p>
@@ -101,8 +102,25 @@ export default function App() {
     );
   };
 
+  // background watermark styling
+  const bgStyle = {
+    backgroundImage: `url(${process.env.PUBLIC_URL}/logo.png)`,
+    backgroundRepeat: "repeat",
+    backgroundSize: "100px",
+    opacity: 0.1,
+    position: "fixed",
+    top: 0,
+    left: 0,
+    width: "100vw",
+    height: "100vh",
+    zIndex: -1,
+    pointerEvents: "none"
+  };
+
   if (!isLoggedIn) {
     return (
+      <>
+      <div style={bgStyle}></div> {/* background watermark */}
       <div className="container">
         <form className="login-form" onSubmit={handleLogin}>
           <h2>Login</h2>
@@ -122,23 +140,27 @@ export default function App() {
           {loginError && <p className="error-text">{loginError}</p>}
         </form>
       </div>
+      </>
     );
   }
 
   return (
-    <div className="container">
-      <h1>GYM Member Lookup</h1>
-      <button onClick={logout} className="logout-button">Logout</button>
-      <div className="input-group">
-        <input
-          type="text"
-          placeholder="Enter Member ID"
-          value={inputId}
-          onChange={e => setInputId(e.target.value)}
-        />
-        <button onClick={handleSubmit}>Search</button>
+    <>
+      <div style={bgStyle}></div> {/* background watermark */}
+      <div className="container">
+        <h1>GYM Member Lookup</h1>
+        <button onClick={logout} className="logout-button">Logout</button>
+        <div className="input-group">
+          <input
+            type="text"
+            placeholder="Enter Member ID"
+            value={inputId}
+            onChange={e => setInputId(e.target.value)}
+          />
+          <button onClick={handleSubmit}>Search</button>
+        </div>
+        {renderCard()}
       </div>
-      {renderCard()}
-    </div>
+    </>
   );
 }
