@@ -1,5 +1,5 @@
 // client/src/App.js
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { format, differenceInDays } from "date-fns";
 import "./index.css";
 
@@ -12,71 +12,150 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [loginForm, setLoginForm] = useState({ username: "", password: "" });
   const [loginError, setLoginError] = useState("");
-
-  const logout = () => {
-    localStorage.removeItem("token");
-    setIsLoggedIn(false);
-    setData([]);
-    setMember(null);
-  };
+  const [loading, setLoading] = useState(false);
+  const expiryTimerRef = useRef(null);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) return;
-    fetch(`${API_BASE}/data`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error("Unauthorized");
-        return res.json();
-      })
-      .then((json) => {
-        const [headers, ...rows] = json.values;
-        const records = rows.map((row) =>
-          Object.fromEntries(row.map((val, i) => [headers[i], val]))
-        );
-        setData(records);
-        setIsLoggedIn(true);
-      })
-      .catch(() => logout());
+    // Try to fetch data on mount; if 401, attempt refresh then retry
+    checkSessionAndLoad();
+    return () => {
+      if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSubmit = () => {
-    let foundMember;
+  async function apiFetch(path, opts = {}) {
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...opts,
+      credentials: "include",
+      headers: { ...(opts.headers || {}), "Content-Type": "application/json" },
+    });
+    return res;
+  }
 
-    if (/^\d+$/.test(searchTerm.trim())) {
-      // Search by numeric ID
-      foundMember = data.find((m) => String(m.ID) === searchTerm.trim());
-    } else {
-      // Search by name (case-insensitive)
-      foundMember = data.find(
-        (m) => m.Name.toLowerCase() === searchTerm.trim().toLowerCase()
-      );
+  async function tryRefresh() {
+    try {
+      const r = await apiFetch("/refresh", { method: "POST" });
+      if (!r.ok) return false;
+      const json = await r.json();
+      scheduleAutoLogout(json.expiresIn);
+      return true;
+    } catch {
+      return false;
     }
+  }
 
-    setMember(foundMember || null);
-  };
+  function scheduleAutoLogout(expiresInSec) {
+    if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current);
+    // add small buffer (2s)
+    expiryTimerRef.current = setTimeout(() => {
+      alert("Session expired — please login again.");
+      setIsLoggedIn(false);
+      setData([]);
+      setMember(null);
+    }, Math.max((expiresInSec || 60) * 1000 - 2000, 0));
+  }
+
+  async function checkSessionAndLoad() {
+    setLoading(true);
+    try {
+      const r = await apiFetch("/data", { method: "GET" });
+      if (r.status === 401) {
+        // try refresh
+        const ok = await tryRefresh();
+        if (!ok) {
+          setIsLoggedIn(false);
+          setData([]);
+          return;
+        }
+        // retry fetch
+        const retry = await apiFetch("/data", { method: "GET" });
+        if (!retry.ok) {
+          setIsLoggedIn(false);
+          setData([]);
+          return;
+        }
+        const json = await retry.json();
+        setData(json);
+        setIsLoggedIn(true);
+        // get expiry from refresh response earlier? We called tryRefresh which scheduled timer
+      } else if (!r.ok) {
+        setIsLoggedIn(false);
+        setData([]);
+      } else {
+        const json = await r.json();
+        setData(json);
+        setIsLoggedIn(true);
+      }
+    } catch (err) {
+      setIsLoggedIn(false);
+      setData([]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    setLoginError("");
+    setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/login`, {
+      const res = await apiFetch("/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(loginForm),
       });
-      if (!res.ok) throw new Error("Login failed");
-      const { token } = await res.json();
-      localStorage.setItem("token", token);
-      setLoginError("");
-      window.location.reload();
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(txt || "Login failed");
+      }
+      const json = await res.json();
+      scheduleAutoLogout(json.expiresIn);
+      // load data
+      const dataRes = await apiFetch("/data", { method: "GET" });
+      if (!dataRes.ok) throw new Error("Failed to load data");
+      const members = await dataRes.json();
+      setData(members);
+      setIsLoggedIn(true);
+      setLoginForm({ username: "", password: "" });
     } catch (err) {
-      setLoginError("Invalid username or password");
+      setLoginError(err.message?.message || "Invalid credentials");
+    } finally {
+      setLoading(false);
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await apiFetch("/logout", { method: "POST" });
+    } catch (err) {
+      // ignore
+    } finally {
+      setIsLoggedIn(false);
+      setData([]);
+      setMember(null);
+      if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current);
+    }
+  };
+
+  const handleSubmit = (e) => {
+    if (e) e.preventDefault();
+    if (!searchTerm.trim()) {
+      setMember(null);
+      return;
+    }
+
+    let found = null;
+    if (/^\d+$/.test(searchTerm.trim())) {
+      found = data.find((m) => String(m.ID) === searchTerm.trim());
+    } else {
+      const q = searchTerm.trim().toLowerCase();
+      found = data.find((m) => (m.Name || "").toLowerCase() === q) || data.find((m) => (m.Name || "").toLowerCase().includes(q));
+    }
+    setMember(found || null);
+  };
+
   const renderCard = () => {
-    if (!member) return <p className="not-found">No member found</p>;
+    if (!member) return <p className="not-found fade-in">No member found</p>;
 
     const expiryDate = new Date(member["Membership Expiry"]);
     const startDate = new Date(member["Membership Date"]);
@@ -95,47 +174,45 @@ export default function App() {
       : "U";
 
     return (
-      <div className={`member-card ${statusClass}`}>
-        {member["Image"] ? (
-          <img src={member["Image"]} alt="User" className="avatar" />
-        ) : (
-          <div className="avatar initials">{initials}</div>
-        )}
-        <p>
-          <strong>Name:</strong> {member["Name"]}
-        </p>
-        <p>
-          <strong>Phone:</strong> {member["Phone Number"]}
-        </p>
-        <p>
-          <strong>Membership Date:</strong> {format(startDate, "dd MMM yyyy")}
-        </p>
-        <p>
-          <strong>Membership:</strong> {member["Status"]}
-        </p>
-        {member["Locker"] && (
-          <p>
-            <strong>Locker:</strong> {member["Locker"]}
-          </p>
-        )}
-        <p>
-          <strong>Expiry:</strong> {format(expiryDate, "dd MMM yyyy")}
-        </p>
-        {daysLeft <= 0 ? (
-          <p className="expired">Membership Expired</p>
-        ) : daysLeft <= 5 ? (
-          <p className="warning">Ends in {daysLeft} days</p>
-        ) : null}
+      <div className={`member-card ${statusClass} card-animate`}>
+        <div className="card-top">
+          {member["Image"] ? <img src={member["Image"]} alt="User" className="avatar" /> : <div className="avatar initials">{initials}</div>}
+          <div className="member-meta">
+            <h2 className="member-name">{member["Name"]}</h2>
+            <div className="badges">
+              <span className={`badge ${statusClass === "status-green" ? "badge-active" : ""}`}>
+                {statusClass === "status-green" ? "Active" : statusClass === "status-yellow" ? "Expiring" : "Expired"}
+              </span>
+              {member["Locker"] && <span className="badge">Locker {member["Locker"]}</span>}
+            </div>
+          </div>
+        </div>
+
+        <div className="card-body">
+          <div className="info-row">
+            <div className="label">Phone</div>
+            <div className="value">{member["Phone Number"] || "—"}</div>
+          </div>
+          <div className="info-row">
+            <div className="label">Joined</div>
+            <div className="value">{isNaN(startDate) ? "—" : format(startDate, "dd MMM yyyy")}</div>
+          </div>
+          <div className="info-row">
+            <div className="label">Expiry</div>
+            <div className="value">{isNaN(expiryDate) ? "—" : format(expiryDate, "dd MMM yyyy")}</div>
+          </div>
+
+          {daysLeft <= 0 ? <p className="expired">Membership Expired</p> : daysLeft <= 5 ? <p className="warning">Ends in {daysLeft} days — consider renewal</p> : <p className="healthy">Good for {daysLeft} days</p>}
+        </div>
       </div>
     );
   };
 
-  // background watermark styling
   const bgStyle = {
     backgroundImage: `url(${process.env.PUBLIC_URL}/logo.png)`,
     backgroundRepeat: "repeat",
-    backgroundSize: "100px",
-    opacity: 0.1,
+    backgroundSize: "120px",
+    opacity: 0.03,
     position: "fixed",
     top: 0,
     left: 0,
@@ -145,55 +222,42 @@ export default function App() {
     pointerEvents: "none",
   };
 
-  if (!isLoggedIn) {
-    return (
-      <>
-        <div style={bgStyle}></div> {/* background watermark */}
-        <div className="container">
-          <form className="login-form" onSubmit={handleLogin}>
-            <h2>Login</h2>
-            <input
-              type="text"
-              placeholder="Username"
-              value={loginForm.username}
-              onChange={(e) =>
-                setLoginForm({ ...loginForm, username: e.target.value })
-              }
-            />
-            <input
-              type="password"
-              placeholder="Password"
-              value={loginForm.password}
-              onChange={(e) =>
-                setLoginForm({ ...loginForm, password: e.target.value })
-              }
-            />
-            <button type="submit">Login</button>
-            {loginError && <p className="error-text">{loginError}</p>}
-          </form>
-        </div>
-      </>
-    );
-  }
-
   return (
     <>
-      <div style={bgStyle}></div> {/* background watermark */}
-      <div className="container">
-        <h1>GYM Member Lookup</h1>
-        <button onClick={logout} className="logout-button">
-          Logout
-        </button>
-        <div className="input-group">
-          <input
-            type="text"
-            placeholder="Enter Member ID"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-          <button onClick={handleSubmit}>Search</button>
-        </div>
-        {renderCard()}
+      <div style={bgStyle}></div>
+      <div className="container fade-in">
+        {!isLoggedIn ? (
+          <form className="login-form glass-card" onSubmit={handleLogin}>
+            <div className="brand">
+              <img src={`${process.env.PUBLIC_URL}/logo.png`} alt="logo" className="logo" />
+              <h2>Welcome back</h2>
+              <p className="sub">Sign in to access member lookup</p>
+            </div>
+
+            <input type="text" placeholder="Username" value={loginForm.username} onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })} required />
+            <input type="password" placeholder="Password" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} required />
+            <button className="btn-primary" type="submit">{loading ? "Signing in..." : "Sign in"}</button>
+            {loginError && <p className="error-text">{loginError}</p>}
+          </form>
+        ) : (
+          <div className="app-shell">
+            <header className="app-header">
+              <h1>Gym Member Lookup</h1>
+              <div className="header-actions">
+                <button className="logout-button" onClick={handleLogout}>Logout</button>
+              </div>
+            </header>
+
+            <main className="lookup-area">
+              <form className="input-group" onSubmit={handleSubmit}>
+                <input type="text" placeholder="Search by ID or Name" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                <button className="btn-primary" type="submit">Search</button>
+              </form>
+
+              <div className="result-area">{loading ? <p>Loading…</p> : renderCard()}</div>
+            </main>
+          </div>
+        )}
       </div>
     </>
   );
