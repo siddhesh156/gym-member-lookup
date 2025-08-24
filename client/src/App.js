@@ -8,7 +8,7 @@ const API_BASE = process.env.REACT_APP_API_BASE || "http://localhost:5000/api";
 export default function App() {
   const [data, setData] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [member, setMember] = useState(null);
+  const [member, setMember] = useState([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [loginForm, setLoginForm] = useState({ username: "", password: "" });
   const [loginError, setLoginError] = useState("");
@@ -52,7 +52,7 @@ export default function App() {
       alert("Session expired — please login again.");
       setIsLoggedIn(false);
       setData([]);
-      setMember(null);
+      setMember([]);
     }, Math.max((expiresInSec || 60) * 1000 - 2000, 0));
   }
 
@@ -132,7 +132,7 @@ export default function App() {
     } finally {
       setIsLoggedIn(false);
       setData([]);
-      setMember(null);
+      setMember([]);
       if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current);
     }
   };
@@ -140,23 +140,21 @@ export default function App() {
   const handleSubmit = (e) => {
     if (e) e.preventDefault();
     if (!searchTerm.trim()) {
-      setMember(null);
+      setMember([]);
       return;
     }
 
-    let found = null;
+    let found = [];
     if (/^\d+$/.test(searchTerm.trim())) {
       found = data.find((m) => String(m.ID) === searchTerm.trim());
     } else {
       const q = searchTerm.trim().toLowerCase();
-      found = data.find((m) => (m.Name || "").toLowerCase() === q) || data.find((m) => (m.Name || "").toLowerCase().includes(q));
+      found = data.filter((m) => (m.Name || "").toLowerCase().includes(q));
     }
-    setMember(found || null);
+    setMember(found || []);
   };
 
-  const renderCard = () => {
-    if (!member) return <p className="not-found fade-in">No member found</p>;
-
+  const renderCard = (member) => {
     const expiryDate = new Date(member["Membership Expiry"]);
     const startDate = new Date(member["Membership Date"]);
     const today = new Date();
@@ -176,14 +174,28 @@ export default function App() {
     return (
       <div className={`member-card ${statusClass} card-animate`}>
         <div className="card-top">
-          {member["Image"] ? <img src={member["Image"]} alt="User" className="avatar" /> : <div className="avatar initials">{initials}</div>}
+          {member["Image"] ? (
+            <img src={member["Image"]} alt="User" className="avatar" />
+          ) : (
+            <div className="avatar initials">{initials}</div>
+          )}
           <div className="member-meta">
             <h2 className="member-name">{member["Name"]}</h2>
             <div className="badges">
-              <span className={`badge ${statusClass === "status-green" ? "badge-active" : ""}`}>
-                {statusClass === "status-green" ? "Active" : statusClass === "status-yellow" ? "Expiring" : "Expired"}
+              <span
+                className={`badge ${
+                  statusClass === "status-green" ? "badge-active" : ""
+                }`}
+              >
+                {statusClass === "status-green"
+                  ? "Active"
+                  : statusClass === "status-yellow"
+                  ? "Expiring"
+                  : "Expired"}
               </span>
-              {member["Locker"] && <span className="badge">Locker {member["Locker"]}</span>}
+              {member["Locker"] && (
+                <span className="badge">Locker {member["Locker"]}</span>
+              )}
             </div>
           </div>
         </div>
@@ -195,14 +207,26 @@ export default function App() {
           </div>
           <div className="info-row">
             <div className="label">Joined</div>
-            <div className="value">{isNaN(startDate) ? "—" : format(startDate, "dd MMM yyyy")}</div>
+            <div className="value">
+              {isNaN(startDate) ? "—" : format(startDate, "dd MMM yyyy")}
+            </div>
           </div>
           <div className="info-row">
             <div className="label">Expiry</div>
-            <div className="value">{isNaN(expiryDate) ? "—" : format(expiryDate, "dd MMM yyyy")}</div>
+            <div className="value">
+              {isNaN(expiryDate) ? "—" : format(expiryDate, "dd MMM yyyy")}
+            </div>
           </div>
 
-          {daysLeft <= 0 ? <p className="expired">Membership Expired</p> : daysLeft <= 5 ? <p className="warning">Ends in {daysLeft} days — consider renewal</p> : <p className="healthy">Good for {daysLeft} days</p>}
+          {daysLeft <= 0 ? (
+            <p className="expired">Membership Expired</p>
+          ) : daysLeft <= 5 ? (
+            <p className="warning">
+              Ends in {daysLeft} days — consider renewal
+            </p>
+          ) : (
+            <p className="healthy">Good for {daysLeft} days</p>
+          )}
         </div>
       </div>
     );
@@ -229,14 +253,36 @@ export default function App() {
         {!isLoggedIn ? (
           <form className="login-form glass-card" onSubmit={handleLogin}>
             <div className="brand">
-              <img src={`${process.env.PUBLIC_URL}/logo.png`} alt="logo" className="logo" />
+              <img
+                src={`${process.env.PUBLIC_URL}/logo.png`}
+                alt="logo"
+                className="logo"
+              />
               <h2>Welcome back</h2>
               <p className="sub">Sign in to access member lookup</p>
             </div>
 
-            <input type="text" placeholder="Username" value={loginForm.username} onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })} required />
-            <input type="password" placeholder="Password" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} required />
-            <button className="btn-primary" type="submit">{loading ? "Signing in..." : "Sign in"}</button>
+            <input
+              type="text"
+              placeholder="Username"
+              value={loginForm.username}
+              onChange={(e) =>
+                setLoginForm({ ...loginForm, username: e.target.value })
+              }
+              required
+            />
+            <input
+              type="password"
+              placeholder="Password"
+              value={loginForm.password}
+              onChange={(e) =>
+                setLoginForm({ ...loginForm, password: e.target.value })
+              }
+              required
+            />
+            <button className="btn-primary" type="submit">
+              {loading ? "Signing in..." : "Sign in"}
+            </button>
             {loginError && <p className="error-text">{loginError}</p>}
           </form>
         ) : (
@@ -244,17 +290,34 @@ export default function App() {
             <header className="app-header">
               <h1>Gym Member Lookup</h1>
               <div className="header-actions">
-                <button className="logout-button" onClick={handleLogout}>Logout</button>
+                <button className="logout-button" onClick={handleLogout}>
+                  Logout
+                </button>
               </div>
             </header>
 
             <main className="lookup-area">
               <form className="input-group" onSubmit={handleSubmit}>
-                <input type="text" placeholder="Search by ID or Name" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-                <button className="btn-primary" type="submit">Search</button>
+                <input
+                  type="text"
+                  placeholder="Search by ID or Name"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                <button className="btn-primary" type="submit">
+                  Search
+                </button>
               </form>
 
-              <div className="result-area">{loading ? <p>Loading…</p> : renderCard()}</div>
+              <div className="result-area">
+                {loading ? (
+                  <p>Loading…</p>
+                ) : member.length > 0 ? (
+                  <div className="results-grid">{member.map(renderCard)}</div>
+                ) : (
+                  <p className="not-found fade-in">No member found</p>
+                )}
+              </div>
             </main>
           </div>
         )}

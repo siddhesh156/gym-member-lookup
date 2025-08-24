@@ -176,6 +176,13 @@ input:focus {
 
 .not-found { color:var(--muted); font-style:italic; }
 
+.results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem; /* spacing between cards */
+  margin-top: 1rem;
+}
+
 @keyframes fadeInUp {
   0% { transform: translateY(20px); opacity:0; }
   100% { transform: translateY(0); opacity:1; }
