@@ -15,10 +15,9 @@ app.use(express.json());
 app.use(cookieParser());
 
 // CORS: allow your client origin and credentials
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:3000";
 app.use(
   cors({
-    origin: CLIENT_ORIGIN,
+    origin: [process.env.CLIENT_ORIGIN, "http://localhost:3000","https://gym-member-lookup.vercel.app"],
     credentials: true,
   })
 );
