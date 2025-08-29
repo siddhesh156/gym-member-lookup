@@ -144,7 +144,6 @@ input:focus {
   align-items:center;
 }
 .input-group input { flex:1; }
-.input-group button { min-width:120px; }
 
 .result-area { width:100%; display:flex; justify-content:center; align-items:flex-start; padding-top:6px; }
 

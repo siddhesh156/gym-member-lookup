@@ -54,7 +54,7 @@ export default function App() {
       setIsLoggedIn(false);
       setData([]);
       setMember([]);
-      setSearchTerm('')
+      setSearchTerm("");
     }, Math.max((expiresInSec || 60) * 1000 - 2000, 0));
   }
 
@@ -101,6 +101,8 @@ export default function App() {
     try {
       const res = await apiFetch("/login", {
         method: "POST",
+        credentials: "include", // important for cookies,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(loginForm),
       });
       if (!res.ok) {
@@ -130,7 +132,7 @@ export default function App() {
       setIsLoggedIn(false);
       setData([]);
       setMember([]);
-      setSearchTerm('')
+      setSearchTerm("");
       if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current);
     }
   };
@@ -315,15 +317,46 @@ export default function App() {
 
             <main className="lookup-area">
               {/* 👇 removed search button, input auto triggers search with debounce */}
-              <form className="input-group" onSubmit={(e) => e.preventDefault()}>
-                <input
-                  type="text"
-                  placeholder="Search by ID or Name"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
+              <form
+                className="input-group"
+                onSubmit={(e) => e.preventDefault()}
+              >
+                <div
+                  className="search-wrapper"
+                  style={{ position: "relative", width: "100%" }}
+                >
+                  <input
+                    type="text"
+                    placeholder="Search by ID or Name"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    style={{ width: "100%", paddingRight: "2rem" }} // space for the X button
+                  />
+                  {searchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchTerm("");
+                        setMember([]); // also clear results
+                      }}
+                      className="clear-btn"
+                      style={{
+                        position: "absolute",
+                        right: "0.5rem",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        border: "none",
+                        background: "transparent",
+                        cursor: "pointer",
+                        fontSize: "1.2rem",
+                        color: "#666",
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
               </form>
-
               <div className="result-area">
                 {loading ? (
                   <p>Loading…</p>
