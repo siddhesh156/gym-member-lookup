@@ -8,11 +8,14 @@ const cookieParser = require("cookie-parser");
 const rateLimit = require("express-rate-limit");
 const helmet = require("helmet");
 const crypto = require("crypto");
+const { requestLogger, loginLogger } = require("./middleware/logger");
 const app = express();
 
 app.use(helmet());
 app.use(express.json());
 app.use(cookieParser());
+app.use(requestLogger);
+app.use(loginLogger);
 
 // CORS: allow your client origin and credentials
 app.use(
