@@ -13,13 +13,15 @@ export default function App() {
   const [loginForm, setLoginForm] = useState({ username: "", password: "" });
   const [loginError, setLoginError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false); // 👈 for password toggle
   const expiryTimerRef = useRef(null);
+  const debounceRef = useRef(null); // 👈 for debounce
 
   useEffect(() => {
-    // Try to fetch data on mount; if 401, attempt refresh then retry
     checkSessionAndLoad();
     return () => {
       if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -47,12 +49,12 @@ export default function App() {
 
   function scheduleAutoLogout(expiresInSec) {
     if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current);
-    // add small buffer (2s)
     expiryTimerRef.current = setTimeout(() => {
       alert("Session expired — please login again.");
       setIsLoggedIn(false);
       setData([]);
       setMember([]);
+      setSearchTerm('')
     }, Math.max((expiresInSec || 60) * 1000 - 2000, 0));
   }
 
@@ -61,14 +63,12 @@ export default function App() {
     try {
       const r = await apiFetch("/data", { method: "GET" });
       if (r.status === 401) {
-        // try refresh
         const ok = await tryRefresh();
         if (!ok) {
           setIsLoggedIn(false);
           setData([]);
           return;
         }
-        // retry fetch
         const retry = await apiFetch("/data", { method: "GET" });
         if (!retry.ok) {
           setIsLoggedIn(false);
@@ -78,7 +78,6 @@ export default function App() {
         const json = await retry.json();
         setData(json);
         setIsLoggedIn(true);
-        // get expiry from refresh response earlier? We called tryRefresh which scheduled timer
       } else if (!r.ok) {
         setIsLoggedIn(false);
         setData([]);
@@ -87,7 +86,7 @@ export default function App() {
         setData(json);
         setIsLoggedIn(true);
       }
-    } catch (err) {
+    } catch {
       setIsLoggedIn(false);
       setData([]);
     } finally {
@@ -110,7 +109,6 @@ export default function App() {
       }
       const json = await res.json();
       scheduleAutoLogout(json.expiresIn);
-      // load data
       const dataRes = await apiFetch("/data", { method: "GET" });
       if (!dataRes.ok) throw new Error("Failed to load data");
       const members = await dataRes.json();
@@ -127,18 +125,26 @@ export default function App() {
   const handleLogout = async () => {
     try {
       await apiFetch("/logout", { method: "POST" });
-    } catch (err) {
-      // ignore
+    } catch {
     } finally {
       setIsLoggedIn(false);
       setData([]);
       setMember([]);
+      setSearchTerm('')
       if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current);
     }
   };
 
-  const handleSubmit = (e) => {
-    if (e) e.preventDefault();
+  // 👇 runs when searchTerm changes, but waits 400ms before applying
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      handleSubmit();
+    }, 400);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm]);
+
+  const handleSubmit = () => {
     if (!searchTerm.trim()) {
       setMember([]);
       return;
@@ -271,15 +277,26 @@ export default function App() {
               }
               required
             />
-            <input
-              type="password"
-              placeholder="Password"
-              value={loginForm.password}
-              onChange={(e) =>
-                setLoginForm({ ...loginForm, password: e.target.value })
-              }
-              required
-            />
+
+            {/* 👇 password input with toggle */}
+            <div className="password-wrapper">
+              <input
+                type={showPassword ? "text" : "password"}
+                placeholder="Password"
+                value={loginForm.password}
+                onChange={(e) =>
+                  setLoginForm({ ...loginForm, password: e.target.value })
+                }
+                required
+              />
+              <span
+                className="toggle-password"
+                onClick={() => setShowPassword((prev) => !prev)}
+              >
+                {showPassword ? "🙈" : "👁️"}
+              </span>
+            </div>
+
             <button className="btn-primary" type="submit">
               {loading ? "Signing in..." : "Sign in"}
             </button>
@@ -297,16 +314,14 @@ export default function App() {
             </header>
 
             <main className="lookup-area">
-              <form className="input-group" onSubmit={handleSubmit}>
+              {/* 👇 removed search button, input auto triggers search with debounce */}
+              <form className="input-group" onSubmit={(e) => e.preventDefault()}>
                 <input
                   type="text"
                   placeholder="Search by ID or Name"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
-                <button className="btn-primary" type="submit">
-                  Search
-                </button>
               </form>
 
               <div className="result-area">

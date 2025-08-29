@@ -2,7 +2,9 @@
   "name": "gym-server",
   "version": "1.0.0",
   "main": "index.js",
-  "scripts": { "start": "node index.js" },
+  "scripts": {
+    "start": "nodemon index.js"
+  },
   "dependencies": {
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
@@ -11,6 +13,7 @@
     "express-rate-limit": "^6.8.0",
     "helmet": "^7.0.0",
     "jsonwebtoken": "^9.0.0",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "nodemon": "^3.1.10"
   }
 }

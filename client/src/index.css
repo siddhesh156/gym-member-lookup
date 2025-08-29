@@ -83,6 +83,26 @@ input:focus {
   transform: translateY(-1px);
 }
 
+/* password wrapper */
+.password-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-wrapper input {
+  width: 100%;
+  padding-right: 40px; /* space for eye icon */
+}
+
+.toggle-password {
+  position: absolute;
+  right: 10px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 1.1rem;
+}
+
 /* buttons */
 .btn-primary {
   padding:0.8rem 1rem;
