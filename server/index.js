@@ -53,7 +53,7 @@ if (!USERNAME || !PASSWORD) {
 const refreshTokenStore = new Map();
 
 // cookie options
-const isProd = process.env.NODE_ENV === "production";
+const isProd = true // process.env.NODE_ENV === "production";
 const cookieOptions = {
   httpOnly: true,
   secure: isProd, // set to true in production (requires https)
