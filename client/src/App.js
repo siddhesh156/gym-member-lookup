@@ -27,24 +27,38 @@ export default function App() {
   }, []);
 
   async function apiFetch(path, opts = {}) {
+    let token = localStorage.getItem("access_token");
+    const expiry = localStorage.getItem("access_expiry");
+
+    // if expired → try refresh
+    if (expiry && Date.now() > expiry) {
+      const ok = await refreshToken();
+      if (!ok) throw new Error("Session expired");
+      token = localStorage.getItem("access_token");
+    }
+
+    const headers = {
+      ...(opts.headers || {}),
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+
     const res = await fetch(`${API_BASE}${path}`, {
       ...opts,
-      credentials: "include",
-      headers: { ...(opts.headers || {}), "Content-Type": "application/json" },
+      headers,
     });
-    return res;
-  }
 
-  async function tryRefresh() {
-    try {
-      const r = await apiFetch("/refresh", { method: "POST" });
-      if (!r.ok) return false;
-      const json = await r.json();
-      scheduleAutoLogout(json.expiresIn);
-      return true;
-    } catch {
-      return false;
+    // if unauthorized → attempt refresh once
+    if (res.status === 401) {
+      const ok = await refreshToken();
+      if (ok) {
+        return apiFetch(path, opts); // retry with new token
+      } else {
+        throw new Error("Unauthorized");
+      }
     }
+
+    return res;
   }
 
   function scheduleAutoLogout(expiresInSec) {
@@ -59,36 +73,20 @@ export default function App() {
   }
 
   async function checkSessionAndLoad() {
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      setIsLoggedIn(false);
+      return;
+    }
     setLoading(true);
     try {
-      const r = await apiFetch("/data", { method: "GET" });
-      if (r.status === 401) {
-        const ok = await tryRefresh();
-        if (!ok) {
-          setIsLoggedIn(false);
-          setData([]);
-          return;
-        }
-        const retry = await apiFetch("/data", { method: "GET" });
-        if (!retry.ok) {
-          setIsLoggedIn(false);
-          setData([]);
-          return;
-        }
-        const json = await retry.json();
-        setData(json);
-        setIsLoggedIn(true);
-      } else if (!r.ok) {
-        setIsLoggedIn(false);
-        setData([]);
-      } else {
-        const json = await r.json();
-        setData(json);
-        setIsLoggedIn(true);
-      }
+      const r = await apiFetch("/data");
+      if (!r.ok) throw new Error("Not authorized");
+      const json = await r.json();
+      setData(json);
+      setIsLoggedIn(true);
     } catch {
-      setIsLoggedIn(false);
-      setData([]);
+      handleLogout();
     } finally {
       setLoading(false);
     }
@@ -101,8 +99,6 @@ export default function App() {
     try {
       const res = await apiFetch("/login", {
         method: "POST",
-        credentials: "include", // important for cookies,
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(loginForm),
       });
       if (!res.ok) {
@@ -110,31 +106,61 @@ export default function App() {
         throw new Error(txt || "Login failed");
       }
       const json = await res.json();
+
+      // 👉 Save tokens in localStorage
+      localStorage.setItem("access_token", json.accessToken);
+      localStorage.setItem("refresh_token", json.refreshToken);
+      localStorage.setItem("access_expiry", Date.now() + json.expiresIn * 1000);
+
       scheduleAutoLogout(json.expiresIn);
-      const dataRes = await apiFetch("/data", { method: "GET" });
+
+      const dataRes = await apiFetch("/data");
       if (!dataRes.ok) throw new Error("Failed to load data");
       const members = await dataRes.json();
       setData(members);
       setIsLoggedIn(true);
       setLoginForm({ username: "", password: "" });
     } catch (err) {
-      setLoginError(err.message?.message || "Invalid credentials");
+      setLoginError(err.message || "Invalid credentials");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLogout = async () => {
+  async function refreshToken() {
+    const refresh = localStorage.getItem("refresh_token");
+    if (!refresh) return false;
     try {
-      await apiFetch("/logout", { method: "POST" });
-    } catch {
-    } finally {
-      setIsLoggedIn(false);
-      setData([]);
-      setMember([]);
-      setSearchTerm("");
-      if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current);
+      const res = await fetch(`${API_BASE}/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken: refresh }),
+      });
+      if (!res.ok) throw new Error("Refresh failed");
+      const json = await res.json();
+
+      // save new tokens
+      localStorage.setItem("access_token", json.accessToken);
+      localStorage.setItem("access_expiry", Date.now() + json.expiresIn * 1000);
+
+      scheduleAutoLogout(json.expiresIn);
+      return true;
+    } catch (err) {
+      console.error("Refresh error:", err);
+      handleLogout();
+      return false;
     }
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
+    localStorage.removeItem("access_expiry");
+    setIsLoggedIn(false);
+    setData([]);
+    setMember([]);
+    setSearchTerm("");
+    if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current);
   };
 
   // 👇 runs when searchTerm changes, but waits 400ms before applying

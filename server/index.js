@@ -52,15 +52,6 @@ if (!USERNAME || !PASSWORD) {
 // In production use DB
 const refreshTokenStore = new Map();
 
-// cookie options
-const isProd = true // process.env.NODE_ENV === "production";
-const cookieOptions = {
-  httpOnly: true,
-  secure: isProd, // set to true in production (requires https)
-  sameSite: isProd ? "None" : "lax",
-  // path: '/', // default
-};
-
 function generateRefreshToken() {
   return crypto.randomBytes(40).toString("hex");
 }
@@ -123,29 +114,25 @@ app.post("/api/login", (req, res) => {
 
   if (username === USERNAME && password === PASSWORD) {
     const accessToken = signAccessToken({ username });
-    // decode to get expiry
     const decoded = jwt.decode(accessToken);
-    const expiresInSec = decoded && decoded.exp ? decoded.exp - Math.floor(Date.now() / 1000) : 60 * 15;
+    const expiresInSec = decoded?.exp ? decoded.exp - Math.floor(Date.now() / 1000) : 60 * 15;
 
     const refreshToken = generateRefreshToken();
     const refreshExpiresAt = Date.now() + REFRESH_EXPIRES_DAYS * 24 * 60 * 60 * 1000;
     refreshTokenStore.set(refreshToken, { username, expiresAt: refreshExpiresAt });
 
-    // set cookies
-    res.cookie("access_token", accessToken, {
-      ...cookieOptions,
-      maxAge: expiresInSec * 1000,
+    // ✅ Instead of cookies → return in JSON
+    return res.json({
+      user: username,
+      accessToken,
+      refreshToken,
+      expiresIn: expiresInSec,
     });
-    res.cookie("refresh_token", refreshToken, {
-      ...cookieOptions,
-      maxAge: REFRESH_EXPIRES_DAYS * 24 * 60 * 60 * 1000,
-    });
-
-    return res.json({ user: username, expiresIn: expiresInSec });
   }
 
   return res.status(401).json({ message: "Invalid credentials" });
 });
+
 
 /**
  * POST /api/refresh
@@ -154,45 +141,43 @@ app.post("/api/login", (req, res) => {
  * Returns { expiresIn }
  */
 app.post("/api/refresh", (req, res) => {
-  const rt = req.cookies?.refresh_token;
-  if (!rt) return res.status(401).json({ message: "Missing refresh token" });
+  const { refreshToken } = req.body || {};
+  if (!refreshToken) return res.status(401).json({ message: "Missing refresh token" });
 
-  const record = refreshTokenStore.get(rt);
+  const record = refreshTokenStore.get(refreshToken);
   if (!record) return res.status(401).json({ message: "Invalid refresh token" });
   if (record.expiresAt < Date.now()) {
-    refreshTokenStore.delete(rt);
+    refreshTokenStore.delete(refreshToken);
     return res.status(401).json({ message: "Refresh token expired" });
   }
 
-  // rotate: generate new refresh token (optional). Here we keep same refresh token to keep client simple
   const accessToken = signAccessToken({ username: record.username });
   const decoded = jwt.decode(accessToken);
-  const expiresInSec = decoded && decoded.exp ? decoded.exp - Math.floor(Date.now() / 1000) : 60 * 15;
+  const expiresInSec = decoded?.exp ? decoded.exp - Math.floor(Date.now() / 1000) : 60 * 15;
 
-  res.cookie("access_token", accessToken, {
-    ...cookieOptions,
-    maxAge: expiresInSec * 1000,
+  return res.json({
+    user: record.username,
+    accessToken,
+    expiresIn: expiresInSec,
   });
-
-  return res.json({ user: record.username, expiresIn: expiresInSec });
 });
+
 
 /**
  * POST /api/logout
  * Clears cookies and invalidates refresh token
  */
 app.post("/api/logout", (req, res) => {
-  const rt = req.cookies?.refresh_token;
-  if (rt) refreshTokenStore.delete(rt);
-
-  res.clearCookie("access_token", cookieOptions);
-  res.clearCookie("refresh_token", cookieOptions);
+  const { refreshToken } = req.body || {};
+  if (refreshToken) refreshTokenStore.delete(refreshToken);
   return res.json({ ok: true });
 });
 
 /* Auth middleware — looks up access_token cookie */
 function authMiddleware(req, res, next) {
-  const token = req.cookies?.access_token;
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1]; // "Bearer <token>"
+
   if (!token) return res.status(401).json({ message: "Missing access token" });
 
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
